@@ -4,6 +4,7 @@ export const PROVIDER_ROUTE_IDS = [
   'minimax/official',
   'xiaomi/official',
   'openrouter/novita/fp8',
+  'infron/makora',
 ] as const
 
 export type ProviderRouteId = (typeof PROVIDER_ROUTE_IDS)[number]
@@ -16,3 +17,5 @@ export const MINIMAX_OFFICIAL_PROVIDER_ROUTE =
   'minimax/official' satisfies ProviderRouteId
 export const MIMO_NOVITA_PROVIDER_ROUTE =
   'openrouter/novita/fp8' satisfies ProviderRouteId
+export const DEEPSEEK_INFRON_MAKORA_PROVIDER_ROUTE =
+  'infron/makora' satisfies ProviderRouteId
