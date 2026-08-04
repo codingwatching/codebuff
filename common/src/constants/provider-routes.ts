@@ -196,8 +196,8 @@ export const DEEPSEEK_OPENROUTER_PROVIDER_ROUTE =
  * It has by far the best cache read ($0.0028/M) and is tempting for that alone,
  * but it is the same upstream whose failure triggers this fallback, reached
  * through a middleman — pointing the lane there would divert an outage onto
- * itself. Same reasoning that kept the old Infron lane off
- * `deepseek/deepseek-v4-flash-0731`.
+ * itself. The Infron lane can use the 0731 model without this problem because
+ * it pins independent Alibaba upstreams.
  *
  * `deepinfra/fp4` is skipped despite sitting third on price: fp4 quantization,
  * and a 65,536-token output cap that would truncate long agent turns. fp8 is
