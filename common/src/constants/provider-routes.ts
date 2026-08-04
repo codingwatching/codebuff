@@ -6,6 +6,7 @@ export const PROVIDER_ROUTE_IDS = [
   'openrouter/novita/fp8',
   'mimo/openrouter',
   'infron/makora',
+  'deepseek/openrouter',
 ] as const
 
 export type ProviderRouteId = (typeof PROVIDER_ROUTE_IDS)[number]
@@ -102,13 +103,108 @@ export function mimoOpenRouterProvider(): Record<string, unknown> {
 export const MIMO_NOVITA_PROVIDER_ROUTE =
   'openrouter/novita/fp8' satisfies ProviderRouteId
 /**
- * Marks a session as diverted to the Infron fallback for DeepSeek V4 Flash. It
- * says *that* the session is on Infron, not which upstream serves it — routers
- * only compare it for equality, and the upstream list is looked up by model id
- * in `INFRON_PROVIDER_ORDER`. So repointing that list also fixes sessions
- * already pinned here. The `makora` in the name is historical (that upstream
- * went offline in 2026-07); renaming the value needs a migration, since it is
- * persisted in `free_session.provider_route` and read back unvalidated.
+ * LEGACY DeepSeek V4 Flash fallback pin, written while the lane was Infron.
+ * Still recognized on READ so sessions pinned before
+ * {@link DEEPSEEK_OPENROUTER_PROVIDER_ROUTE} shipped keep skipping the DeepSeek
+ * attempt they already failed — but they are now SERVED BY THE OPENROUTER LANE,
+ * which is exactly what the old name being upstream-agnostic bought us: the id
+ * only ever said *that* a session had diverted, never who serves it, so
+ * repointing the lane rescues every session already pinned here with no
+ * migration. Never written anymore; expires with its session.
+ *
+ * The `makora` in the name is doubly historical — that upstream went offline in
+ * 2026-07, and Infron itself stopped serving this lane on 2026-08-04.
  */
 export const DEEPSEEK_INFRON_MAKORA_PROVIDER_ROUTE =
   'infron/makora' satisfies ProviderRouteId
+/**
+ * Marks a DeepSeek V4 Flash session as diverted off DeepSeek's direct API onto
+ * the OpenRouter lane. Like its MiMo peer it names the LANE, not the upstream —
+ * that is {@link DEEPSEEK_OPENROUTER_UPSTREAM_ORDER} below, so repointing the
+ * order also moves every session already pinned here, with no migration.
+ */
+export const DEEPSEEK_OPENROUTER_PROVIDER_ROUTE =
+  'deepseek/openrouter' satisfies ProviderRouteId
+/**
+ * The upstreams that serve {@link DEEPSEEK_OPENROUTER_PROVIDER_ROUTE},
+ * preferred first.
+ *
+ * Chosen as *cheapest that still preserves the prompt cache*, which for an
+ * agent workload are not the same axis. Cache-read price is what actually
+ * drives this bill — a coding turn re-sends a long prefix every step, so most
+ * input tokens are cache reads — and the OpenRouter catalog splits cleanly on
+ * it (checked live 2026-08-04, per M):
+ *
+ *   streamlake/fp8   $0.0881 in  $0.0176 cache  $0.1761 out  fp8   384k max out
+ *   baidu/fp8        $0.0882 in  $0.0176 cache  $0.1764 out  fp8   131k max out
+ *   gmicloud/fp8     $0.0938 in  $0.0188 cache  $0.1876 out  fp8   no stated cap
+ *   ── everything below is >=1.5x the cache-read price ──
+ *   most of the tail  $0.14   in  $0.0280 cache  $0.2800 out
+ *   parasail/coreweave/phala     $0.0700 cache  (4x)
+ *   morph, mancer/fp4            NO cache read at all
+ *
+ * So the three cheapest on input are also the three cheapest on cache read;
+ * there is no tradeoff to make here, which is why the list is short.
+ *
+ * DELIBERATELY NOT `deepseek` (OpenRouter's DeepSeek-first-party endpoint).
+ * It has by far the best cache read ($0.0028/M) and is tempting for that alone,
+ * but it is the same upstream whose failure triggers this fallback, reached
+ * through a middleman — pointing the lane there would divert an outage onto
+ * itself. Same reasoning that kept the old Infron lane off
+ * `deepseek/deepseek-v4-flash-0731`.
+ *
+ * `deepinfra/fp4` is skipped despite sitting third on price: fp4 quantization,
+ * and a 65,536-token output cap that would truncate long agent turns. fp8 is
+ * the floor for this lane.
+ *
+ * THREE ENTRIES, and it must never go to one — see the identical warning on
+ * {@link mimoOpenRouterProvider}. A pinned session has no health check and no
+ * un-pin path, so a one-deep lane turns a single upstream blip into a wedged
+ * session. That is not hypothetical here: this model's previous fallback was
+ * pinned one-deep to `makora` and took out 1,160 requests across 191 users for
+ * ~32h when it went offline (2026-07-26/27, #1045).
+ *
+ * Caveat on the third entry: `gmicloud/fp8` does not list `stop` in its
+ * supported parameters. Without `require_parameters` OpenRouter drops the
+ * unsupported field rather than refusing to route, so a turn served there does
+ * not honor the global stop sequence. Accepted for depth — it only serves when
+ * both fp8 upstreams above it are unavailable — but do not promote it.
+ */
+export const DEEPSEEK_OPENROUTER_UPSTREAM_ORDER = [
+  'streamlake/fp8',
+  'baidu/fp8',
+  'gmicloud/fp8',
+] as const
+
+/**
+ * The OpenRouter output cap this lane requests.
+ *
+ * Matches `streamlake/fp8`'s 384,000-token ceiling — the first upstream in the
+ * order — so a caller's explicit budget can never make the preferred endpoint
+ * ineligible. Slightly under DeepSeek direct's 393,216, same as the Infron lane
+ * this replaces: keep fallback requests inside the contract of the route that
+ * will actually serve them.
+ */
+export const DEEPSEEK_OPENROUTER_MAX_TOKENS = 384_000
+
+/**
+ * Fresh OpenRouter `provider` block for the DeepSeek V4 Flash lane.
+ *
+ * Returns a NEW object with a NEW array every call — these arrays get aliased
+ * into an outgoing request body, and one downstream mutation would corrupt
+ * routing process-wide (the bug `INFRON_PROVIDER_ORDER` was made
+ * copy-on-assignment for in #1045).
+ *
+ * `allow_fallbacks: false` is what preserves the prompt cache: it holds the
+ * session to this order instead of letting OpenRouter spread turns across
+ * twenty endpoints that each keep their own cache. Cache fragmentation is the
+ * expensive failure mode, not a slightly dearer per-token rate — measured on
+ * the MiMo lane, a scattered fallback averaged 27.6k cache_read against ~150k
+ * prompts, paying a full cold prefill per divert.
+ */
+export function deepseekOpenRouterProvider(): Record<string, unknown> {
+  return {
+    order: [...DEEPSEEK_OPENROUTER_UPSTREAM_ORDER],
+    allow_fallbacks: false,
+  }
+}
