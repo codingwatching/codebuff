@@ -103,25 +103,45 @@ export function mimoOpenRouterProvider(): Record<string, unknown> {
 export const MIMO_NOVITA_PROVIDER_ROUTE =
   'openrouter/novita/fp8' satisfies ProviderRouteId
 /**
- * LEGACY DeepSeek V4 Flash fallback pin, written while the lane was Infron.
- * Still recognized on READ so sessions pinned before
- * {@link DEEPSEEK_OPENROUTER_PROVIDER_ROUTE} shipped keep skipping the DeepSeek
- * attempt they already failed — but they are now SERVED BY THE OPENROUTER LANE,
- * which is exactly what the old name being upstream-agnostic bought us: the id
- * only ever said *that* a session had diverted, never who serves it, so
- * repointing the lane rescues every session already pinned here with no
- * migration. Never written anymore; expires with its session.
+ * DeepSeek V4 Flash's FIRST backup: the Infron lane, tier 2 of three.
  *
- * The `makora` in the name is doubly historical — that upstream went offline in
- * 2026-07, and Infron itself stopped serving this lane on 2026-08-04.
+ * Ordering is deliberate and was arrived at the hard way. Infron is the
+ * cheapest route we have for this model — measured live 2026-08-04 on a
+ * 45,008-token prompt, $0.069/M input and ~$0.0144/M cache read against the
+ * OpenRouter lane's $0.0881 and $0.0176, so ~22% cheaper cold and ~13% warm.
+ * But it is a single aggregator account behind one Alibaba provider group, and
+ * when 4,997 sessions diverted onto it in one window it returned 13,286
+ * saturation 429s and then ran out of credits entirely.
+ *
+ * So it sits FIRST among the backups and {@link
+ * DEEPSEEK_OPENROUTER_PROVIDER_ROUTE} sits behind it: cheapest lane for the
+ * steady state (diverts normally run 10-30 per 6h, which Infron absorbs
+ * comfortably), with a lane that cannot run dry as the pressure-relief valve
+ * for the storm. This only works because the cascade RE-PINS on each hop — a
+ * session that finds Infron saturated moves to OpenRouter permanently, rather
+ * than paying a doomed Infron attempt on every later turn.
+ *
+ * The `makora` in the name is historical (that upstream went offline in
+ * 2026-07). The id says only *that* a session is on this lane, never which
+ * upstream serves it — that is INFRON_PROVIDER_ORDER, keyed by model — so
+ * repointing the upstream also moves sessions already pinned here. Renaming the
+ * value itself would need a migration; it is persisted in
+ * `free_session.provider_route` and read back unvalidated.
  */
 export const DEEPSEEK_INFRON_MAKORA_PROVIDER_ROUTE =
   'infron/makora' satisfies ProviderRouteId
 /**
- * Marks a DeepSeek V4 Flash session as diverted off DeepSeek's direct API onto
- * the OpenRouter lane. Like its MiMo peer it names the LANE, not the upstream —
- * that is {@link DEEPSEEK_OPENROUTER_UPSTREAM_ORDER} below, so repointing the
- * order also moves every session already pinned here, with no migration.
+ * DeepSeek V4 Flash's LAST resort: the OpenRouter lane, tier 3 of three.
+ *
+ * Reached when DeepSeek direct and then {@link
+ * DEEPSEEK_INFRON_MAKORA_PROVIDER_ROUTE} have both failed retryably. Dearer per
+ * token than Infron but backed by many independent upstreams and a balance that
+ * is not one account's, which is exactly what a divert storm needs — see the
+ * Infron route's doc for why the cheap lane cannot be the last one.
+ *
+ * Like its MiMo peer it names the LANE, not the upstream — that is {@link
+ * DEEPSEEK_OPENROUTER_UPSTREAM_ORDER} below, so repointing the order also moves
+ * every session already pinned here, with no migration.
  */
 export const DEEPSEEK_OPENROUTER_PROVIDER_ROUTE =
   'deepseek/openrouter' satisfies ProviderRouteId
