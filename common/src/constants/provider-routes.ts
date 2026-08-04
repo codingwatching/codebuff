@@ -7,6 +7,7 @@ export const PROVIDER_ROUTE_IDS = [
   'mimo/openrouter',
   'infron/makora',
   'deepseek/openrouter',
+  'deepseek/crof',
 ] as const
 
 export type ProviderRouteId = (typeof PROVIDER_ROUTE_IDS)[number]
@@ -103,7 +104,33 @@ export function mimoOpenRouterProvider(): Record<string, unknown> {
 export const MIMO_NOVITA_PROVIDER_ROUTE =
   'openrouter/novita/fp8' satisfies ProviderRouteId
 /**
- * DeepSeek V4 Flash's FIRST backup: the Infron lane, tier 2 of three.
+ * DeepSeek V4 Flash's FIRST backup: the CrofAI lane, tier 2 of four.
+ *
+ * Ahead of Infron because of where the money actually goes on an agent
+ * workload. Derived from live billing 2026-08-04, per M:
+ *
+ *                   input    cache read   output
+ *   CrofAI 0731     0.1200     0.0030     0.2100
+ *   Infron alibaba  0.0690     0.0144     0.1375
+ *   OpenRouter      0.0881     0.0176     0.1761
+ *   DeepSeek direct 0.1400     0.0028     0.2800
+ *
+ * CrofAI is DEARER on fresh input and output and cheaper only on cache reads —
+ * but a coding turn re-sends its whole prefix every step, so cache reads are
+ * most of the tokens, and 0.0030 against 0.0144 is a 4.8x cut on the dominant
+ * term. Break-even against Infron is around an 82% cache-hit rate: a
+ * sticky-pinned session clears that comfortably, a single cold turn does not.
+ * That is the trade this ordering makes, and it is the reason the ordering
+ * would be wrong if these lanes were not sticky.
+ *
+ * It also serves `deepseek-v4-flash-0731` — the GA build, the same one
+ * DeepSeek's own API serves — where Infron's undated slug is a frozen preview
+ * snapshot. So this lane is closer to the primary in behaviour as well as price.
+ */
+export const DEEPSEEK_CROF_PROVIDER_ROUTE =
+  'deepseek/crof' satisfies ProviderRouteId
+/**
+ * DeepSeek V4 Flash's SECOND backup: the Infron lane, tier 3 of four.
  *
  * Ordering is deliberate and was arrived at the hard way. Infron is the
  * cheapest route we have for this model — measured live 2026-08-04 on a
@@ -113,11 +140,10 @@ export const MIMO_NOVITA_PROVIDER_ROUTE =
  * when 4,997 sessions diverted onto it in one window it returned 13,286
  * saturation 429s and then ran out of credits entirely.
  *
- * So it sits FIRST among the backups and {@link
- * DEEPSEEK_OPENROUTER_PROVIDER_ROUTE} sits behind it: cheapest lane for the
- * steady state (diverts normally run 10-30 per 6h, which Infron absorbs
- * comfortably), with a lane that cannot run dry as the pressure-relief valve
- * for the storm. This only works because the cascade RE-PINS on each hop — a
+ * So it sits behind {@link DEEPSEEK_CROF_PROVIDER_ROUTE} and ahead of {@link
+ * DEEPSEEK_OPENROUTER_PROVIDER_ROUTE}: cheapest on FRESH input, which is what a
+ * cold session pays, while CrofAI ahead of it wins the warm case on cache
+ * reads, and a lane that cannot run dry backstops the storm. This only works because the cascade RE-PINS on each hop — a
  * session that finds Infron saturated moves to OpenRouter permanently, rather
  * than paying a doomed Infron attempt on every later turn.
  *
@@ -131,7 +157,7 @@ export const MIMO_NOVITA_PROVIDER_ROUTE =
 export const DEEPSEEK_INFRON_MAKORA_PROVIDER_ROUTE =
   'infron/makora' satisfies ProviderRouteId
 /**
- * DeepSeek V4 Flash's LAST resort: the OpenRouter lane, tier 3 of three.
+ * DeepSeek V4 Flash's LAST resort: the OpenRouter lane, tier 4 of four.
  *
  * Reached when DeepSeek direct and then {@link
  * DEEPSEEK_INFRON_MAKORA_PROVIDER_ROUTE} have both failed retryably. Dearer per
