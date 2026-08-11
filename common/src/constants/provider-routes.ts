@@ -104,7 +104,9 @@ export function mimoOpenRouterProvider(): Record<string, unknown> {
 export const MIMO_NOVITA_PROVIDER_ROUTE =
   'openrouter/novita/fp8' satisfies ProviderRouteId
 /**
- * DeepSeek V4 Flash's FIRST backup: the CrofAI lane, tier 2 of four.
+ * DeepSeek V4 Flash's FIRST backup: the CrofAI lane, tier 2 of three — and the
+ * only lane a session may RESUME at, because it is the cheap one on cache
+ * reads and resuming there costs nothing.
  *
  * Ahead of Infron because of where the money actually goes on an agent
  * workload. Derived from live billing 2026-08-04, per M:
@@ -130,7 +132,10 @@ export const MIMO_NOVITA_PROVIDER_ROUTE =
 export const DEEPSEEK_CROF_PROVIDER_ROUTE =
   'deepseek/crof' satisfies ProviderRouteId
 /**
- * DeepSeek V4 Flash's SECOND backup: the Infron lane, tier 3 of four.
+ * DeepSeek V4 Flash's LAST resort: the Infron lane, tier 3 of THREE.
+ *
+ * It gets ONE attempt and leaves no resumable pin (see `asDeepSeekLane`): its
+ * cache reads are 4.8x CrofAI's, so a session must never settle here.
  *
  * Ordering is deliberate and was arrived at the hard way. Infron is the
  * cheapest route we have for this model — measured live 2026-08-04 on a
@@ -157,6 +162,24 @@ export const DEEPSEEK_CROF_PROVIDER_ROUTE =
 export const DEEPSEEK_INFRON_MAKORA_PROVIDER_ROUTE =
   'infron/makora' satisfies ProviderRouteId
 /**
+ * RETIRED as a DeepSeek lane on 2026-08-11. Kept as a recognized id because it
+ * is persisted in `free_session.provider_route` and read back unvalidated —
+ * sessions still carrying the pin must not crash; they simply start from the
+ * primary again, which is the right answer for a lane that no longer exists.
+ *
+ * Why it went: it prices cache reads at $0.0176/M against CrofAI's $0.0030,
+ * and an agent turn re-sends its whole prefix every step, so ~98% of the
+ * tokens land on exactly that term. Being "last resort" did not bound the
+ * damage — the pin only moved forward, so one transient 429 on the lane above
+ * parked a session here for the rest of its hour. It was reached 1,205 times
+ * in 24h, more often than the lane ahead of it, and DeepSeek's daily bill went
+ * from $9k to $39.7k over four days while volume rose only 41%. Depth that
+ * costs 5.9x on the dominant token class is not depth.
+ *
+ * The replacement for that depth is retries: the two cheap lanes are attempted
+ * three times each before anything diverts.
+ *
+ * (Historical, for the MiMo lane which still uses OpenRouter:)
  * DeepSeek V4 Flash's LAST resort: the OpenRouter lane, tier 4 of four.
  *
  * Reached when DeepSeek direct and then {@link
