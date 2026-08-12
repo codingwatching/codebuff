@@ -784,6 +784,14 @@ const CAP_REMEDIES: Record<string, { label: string; detail: string }> = {
  * and drift from it on the first tuning pass. The server owns the numbers; the
  * client renders whatever it is sent.
  */
+/**
+ * NOTE FOR CALLERS: `limits` is what the level WOULD select, which is only
+ * what the account actually gets once `FREEBUFF_TRUST_LEVELS=enforce`. Both
+ * producers gate on that (the Earn route and the session `standing` field), so
+ * a client that receives this can render it as fact. A third producer must do
+ * the same — see the comment in freebuff/web/src/app/api/web/standing/route.ts
+ * for what happens otherwise.
+ */
 export interface FreebuffStandingInfo {
   level: FreebuffTrustLevel
   label: string
