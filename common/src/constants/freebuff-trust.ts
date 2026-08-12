@@ -785,7 +785,91 @@ const CAP_REMEDIES: Record<string, { label: string; detail: string }> = {
  * client renders whatever it is sent.
  */
 /**
- * NOTE FOR CALLERS: `limits` is what the level WOULD select, which is only
+ * What a level means, in words.
+ *
+ * ## Why the numbers do not leave the server
+ *
+ * Three reasons, and the first is the one that matters most:
+ *
+ * 1. **A published limit is a published target.** `docs/freebuff-abuse-
+ *    detection.md` records that the abuse pattern here is not bursting, it is
+ *    "sustained pacing just under the daily caps" — so telling an operator
+ *    exactly where the cap sits is telling them exactly how to sit under it.
+ *    Every threshold in this file is a number we would rather they had to
+ *    discover.
+ * 2. **The numbers are ours, not theirs.** `dailySpendUsd` in particular is
+ *    our provider cost, and a user shown "$25/day" learns something about our
+ *    margins and nothing about what they may do.
+ * 3. **Exact figures invite exactly the wrong conversation.** The first
+ *    version showed them and produced people comparing screenshots and asking
+ *    whether a smaller number meant they had been punished. A limit is meant
+ *    to answer "can I get my work done", and that question has a qualitative
+ *    answer.
+ *
+ * So `FreebuffStandingInfo` carries these phrases and NOT `FreebuffTrustLimits`
+ * — the raw matrix never crosses the wire, which means no client can render it
+ * by accident and no future surface has to remember not to.
+ *
+ * Where a user genuinely needs a count, they already have an exact one: the
+ * model picker renders "N of M sessions used" from the live quota snapshot,
+ * which is authoritative and per-model. Duplicating it here could only
+ * disagree with it.
+ */
+export interface FreebuffStandingHighlight {
+  label: string
+  value: string
+}
+
+const LIMIT_PHRASES: Record<
+  FreebuffTrustLevel,
+  { prompts: string; depth: string; premium: string }
+> = {
+  new: {
+    prompts: 'Enough to get a project started',
+    depth: 'Focused, shorter agent runs',
+    premium: 'Occasional access',
+  },
+  verified: {
+    prompts: 'Comfortable for everyday work',
+    depth: 'Full agent runs',
+    premium: 'Regular access',
+  },
+  established: {
+    prompts: 'Comfortable on heavy days',
+    depth: 'Long runs with plenty of subagents',
+    premium: 'Generous access',
+  },
+  core: {
+    prompts: 'The most we offer',
+    depth: 'The most we offer',
+    premium: 'The most we offer',
+  },
+}
+
+export function freebuffStandingHighlights(
+  accessTier: FreebuffAccessTier,
+  level: FreebuffTrustLevel,
+): FreebuffStandingHighlight[] {
+  const phrases = LIMIT_PHRASES[level]
+  return [
+    { label: 'Prompts a day', value: phrases.prompts },
+    { label: 'Work per prompt', value: phrases.depth },
+    {
+      label: 'Premium models',
+      // Stated as a region fact rather than as something this account lacks:
+      // no level in the limited row can reach a premium model, so framing it
+      // as a level shortfall would send the user chasing points that cannot
+      // buy it.
+      value:
+        freebuffTrustLimits(accessTier, level).premiumSessionsPerDay > 0
+          ? phrases.premium
+          : 'Not available in your region yet',
+    },
+  ]
+}
+
+/**
+ * NOTE FOR CALLERS: `highlights` is what the level WOULD grant, which is only
  * what the account actually gets once `FREEBUFF_TRUST_LEVELS=enforce`. Both
  * producers gate on that (the Earn route and the session `standing` field), so
  * a client that receives this can render it as fact. A third producer must do
@@ -805,7 +889,8 @@ export interface FreebuffStandingInfo {
   factors: FreebuffTrustFactor[]
   nextSteps: FreebuffTrustNextStep[]
   accessTier: FreebuffAccessTier
-  limits: FreebuffTrustLimits
+  /** Semantic, never numeric — see FreebuffStandingHighlight. */
+  highlights: FreebuffStandingHighlight[]
 }
 
 export function toFreebuffStandingInfo(
@@ -831,6 +916,6 @@ export function toFreebuffStandingInfo(
     factors: assessment.factors,
     nextSteps: assessment.nextSteps,
     accessTier,
-    limits: freebuffTrustLimits(accessTier, assessment.level),
+    highlights: freebuffStandingHighlights(accessTier, assessment.level),
   }
 }

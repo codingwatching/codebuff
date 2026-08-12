@@ -389,13 +389,65 @@ describe('next steps', () => {
 })
 
 describe('wire shape', () => {
-  it('carries resolved limits so a client never maps level to numbers itself', () => {
+  it('never puts a raw limit on the wire', () => {
+    // A published limit is a published target: the abuse pattern here is
+    // sustained pacing just under the caps, so the caps stay server-side. This
+    // asserts the payload rather than the component, because the payload is
+    // what a future surface would reach for.
     const info = toFreebuffStandingInfo(
       assessFreebuffTrust(signals({ approvedBounties: 4 }), NOW),
       'limited',
     )
-    expect(info.limits).toEqual(freebuffTrustLimits('limited', info.level))
+    expect(info).not.toHaveProperty('limits')
+
+    // Scoped to the distinctive values. Small ones (a $3 spend cap, 6 premium
+    // sessions) collide with legitimate point values in the copy — "worth 3
+    // points" is not a leaked limit, and asserting on them would fail for the
+    // wrong reason.
+    const serialized = JSON.stringify(info)
+    const distinctive = Object.values(
+      freebuffTrustLimits('limited', info.level),
+    ).filter((value) => value >= 100)
+    expect(distinctive.length).toBeGreaterThan(0)
+    for (const value of distinctive) {
+      expect(serialized).not.toContain(String(value))
+    }
     expect(info.accessTier).toBe('limited')
+  })
+
+  it('describes each axis in words', () => {
+    const info = toFreebuffStandingInfo(
+      assessFreebuffTrust(signals({ approvedBounties: 4 }), NOW),
+      'limited',
+    )
+    expect(info.highlights.map((h) => h.label)).toEqual([
+      'Prompts a day',
+      'Work per prompt',
+      'Premium models',
+    ])
+    for (const highlight of info.highlights) {
+      expect(highlight.value).not.toMatch(/\d/)
+    }
+  })
+
+  it('frames premium as a region fact where no level can unlock it', () => {
+    // Every limited-row level has 0 premium sessions, so calling it a
+    // shortfall would send the user chasing points that cannot buy it.
+    const limited = toFreebuffStandingInfo(
+      assessFreebuffTrust(signals({ approvedBounties: 4 }), NOW),
+      'limited',
+    )
+    expect(
+      limited.highlights.find((h) => h.label === 'Premium models')?.value,
+    ).toMatch(/region/i)
+
+    const full = toFreebuffStandingInfo(
+      assessFreebuffTrust(signals({ approvedBounties: 4 }), NOW),
+      'full',
+    )
+    expect(
+      full.highlights.find((h) => h.label === 'Premium models')?.value,
+    ).not.toMatch(/region/i)
   })
 
   it('reports the next threshold, and nothing beyond core', () => {
