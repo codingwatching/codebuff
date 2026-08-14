@@ -351,6 +351,18 @@ export interface FreebuffTrustSignals {
    *  accounts are refused before any of this runs), so this is history: an
    *  account that was actioned and then unbanned on appeal. */
   hasUnreversedBanEvent: boolean
+  /** `user.privacy_flagged_at` — first request ever seen on an ipinfo-flagged
+   *  anonymizing egress, uncorroborated. Sticky by construction: written once,
+   *  never cleared by code. The WEAK member of the sticky trio, so it carries
+   *  the mildest cap below. */
+  privacyFlaggedAt: Date | null
+  /** `user.privacy_corroborated_at` — first request where a second provider
+   *  agreed the egress was anonymizing. Sticky. */
+  privacyCorroboratedAt: Date | null
+  /** `user.third_party_client_at` — first free-mode request carrying a tool
+   *  schema no Freebuff client ships. Sticky, and behavioural rather than
+   *  network-derived, which is what makes it worth a hard cap. */
+  thirdPartyClientAt: Date | null
   /**
    * The privacy verdict on the CURRENT request, from `getFreeModeRiskScore`.
    * The one live signal in an otherwise durable set, and the one a user can
@@ -695,6 +707,34 @@ export function assessFreebuffTrust(
     cap('verified', 'anonymous_network')
   }
 
+  // The sticky flags: things this account has DONE, remembered past the
+  // request that revealed them. Without these, every network cap above is
+  // defeated by toggling the VPN off for a day — the exact wash-trading of
+  // signals the caps exist to prevent. They cap rather than subtract for the
+  // standard reason (see "Points earn, penalties cap"), and they grade by
+  // evidence weight:
+  //
+  //   corroborated egress   -> verified     two providers agreed
+  //   foreign tool schema   -> verified     behavioural, not network luck
+  //   ipinfo-only egress    -> established  one provider, the weak signal --
+  //                                         `established` is what every
+  //                                         account had before trust levels
+  //                                         existed, so this cap forfeits
+  //                                         only the `core` upside
+  //
+  // The 2026-08-03 mass-reversal is the reason none of these goes lower:
+  // network-derived evidence has wrongly actioned real users before, and a
+  // permanent flag with a harsh cap would make that mistake permanent too.
+  if (signals.privacyCorroboratedAt !== null) {
+    cap('verified', 'past_corroborated_egress')
+  }
+  if (signals.thirdPartyClientAt !== null) {
+    cap('verified', 'third_party_client')
+  }
+  if (signals.privacyFlaggedAt !== null) {
+    cap('established', 'past_privacy_egress')
+  }
+
   // Signup networks and mailboxes that many accounts share. `?? 1` matters:
   // null is unknown (pre-provenance accounts), and unknown must not cap.
   if ((signals.signupPrefixAccountCount ?? 1) >= 8) {
@@ -745,6 +785,21 @@ export function assessFreebuffTrust(
  * no step at all.
  */
 const CAP_REMEDIES: Record<string, { label: string; detail: string }> = {
+  past_corroborated_egress: {
+    label: 'This account has used an anonymizing network',
+    detail:
+      'Requests from this account were confirmed to come through a VPN, proxy or similar exit. That history caps this account at Verified. Everything else still counts toward your level.',
+  },
+  past_privacy_egress: {
+    label: 'This account has connected over a flagged network',
+    detail:
+      'A connection from this account looked like an anonymizing network. That caps this account at Established. If this seems wrong — some office and university networks are misread — contact support.',
+  },
+  third_party_client: {
+    label: 'A non-Freebuff client has used this account',
+    detail:
+      'Requests from this account carried a client we do not ship. That caps this account at Verified. Only official Freebuff apps are supported on free mode.',
+  },
   anonymous_network: {
     label: 'Turn off your VPN or proxy',
     detail:

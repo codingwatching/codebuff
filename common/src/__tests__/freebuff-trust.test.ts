@@ -38,6 +38,9 @@ const UNKNOWN: FreebuffTrustSignals = {
   signupPrefixAccountCount: null,
   mailboxAccountCount: null,
   hasUnreversedBanEvent: false,
+  privacyFlaggedAt: null,
+  privacyCorroboratedAt: null,
+  thirdPartyClientAt: null,
   currentRiskScore: null,
 }
 
