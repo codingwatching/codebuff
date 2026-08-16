@@ -8,6 +8,7 @@ export const PROVIDER_ROUTE_IDS = [
   'infron/makora',
   'deepseek/openrouter',
   'deepseek/crof',
+  'deepseek/official',
 ] as const
 
 export type ProviderRouteId = (typeof PROVIDER_ROUTE_IDS)[number]
@@ -104,12 +105,22 @@ export function mimoOpenRouterProvider(): Record<string, unknown> {
 export const MIMO_NOVITA_PROVIDER_ROUTE =
   'openrouter/novita/fp8' satisfies ProviderRouteId
 /**
- * DeepSeek V4 Flash's FIRST backup: the CrofAI lane, tier 2 of three — and the
- * only lane a session may RESUME at, because it is the cheap one on cache
- * reads and resuming there costs nothing.
+ * DeepSeek V4 Flash's CrofAI lane — and, since the 2026-08-15 cutover, the
+ * COHORT MARK that says a session belongs on it.
  *
- * Ahead of Infron because of where the money actually goes on an agent
- * workload. Derived from live billing 2026-08-04, per M:
+ * This id now carries two meanings that deliberately coincide. Written at
+ * ADMISSION it means "this session was admitted after the cutover, so it enters
+ * the cascade on CrofAI". Written by the CASCADE it means "this session
+ * diverted onto CrofAI". Both want the same thing — enter on CrofAI — which is
+ * why pins written by the pre-cutover code needed no migration when the
+ * cutover shipped, and why nothing has to distinguish them on read.
+ *
+ * A session with NO pin is, by construction, one admitted before the cutover
+ * shipped: it runs the pre-cutover order and keeps the prompt cache it has
+ * already paid to warm. See `deepseekEntryLane` and
+ * docs/freebuff-deepseek-provider-cutover.md.
+ *
+ * Reference prices, from live billing 2026-08-04, per M:
  *
  *                   input    cache read   output
  *   CrofAI 0731     0.1200     0.0030     0.2100
@@ -117,20 +128,47 @@ export const MIMO_NOVITA_PROVIDER_ROUTE =
  *   OpenRouter      0.0881     0.0176     0.1761
  *   DeepSeek direct 0.1400     0.0028     0.2800
  *
- * CrofAI is DEARER on fresh input and output and cheaper only on cache reads —
- * but a coding turn re-sends its whole prefix every step, so cache reads are
- * most of the tokens, and 0.0030 against 0.0144 is a 4.8x cut on the dominant
- * term. Break-even against Infron is around an 82% cache-hit rate: a
- * sticky-pinned session clears that comfortably, a single cold turn does not.
- * That is the trade this ordering makes, and it is the reason the ordering
- * would be wrong if these lanes were not sticky.
+ * CrofAI is DEARER on fresh input and output and cheaper than everything except
+ * DeepSeek direct on cache reads — but a coding turn re-sends its whole prefix
+ * every step, so cache reads are most of the tokens and that is the term that
+ * decides the bill. Against Infron, 0.0030 vs 0.0144 is a 4.8x cut on the
+ * dominant term; break-even is around an 82% cache-hit rate, which a
+ * sticky-pinned session clears comfortably and a single cold turn does not.
+ * That is the trade this ordering makes, and it is why the ordering would be
+ * wrong if these lanes were not sticky.
  *
  * It also serves `deepseek-v4-flash-0731` — the GA build, the same one
  * DeepSeek's own API serves — where Infron's undated slug is a frozen preview
- * snapshot. So this lane is closer to the primary in behaviour as well as price.
+ * snapshot. So this lane matches the DeepSeek-direct lane behind it in
+ * behaviour as well as price.
  */
 export const DEEPSEEK_CROF_PROVIDER_ROUTE =
   'deepseek/crof' satisfies ProviderRouteId
+/**
+ * DeepSeek's own API — the lane a cutover session diverts to, and the lane
+ * every PRE-cutover session still enters on.
+ *
+ * It was the unpinned default until 2026-08-15, which is why it had no route id
+ * before: a lane nothing ever moves to needs no name. Now that a cutover
+ * session can divert here, it has to be able to say so, and to stay — its
+ * prompt cache is warm on this upstream, and sending the next turn back to a
+ * CrofAI that just failed would pay a cold prefill to reach a lane we already
+ * know is unhealthy. The pin skips CrofAI as an ENTRY point only: it stays in
+ * the order behind this lane, because by the next turn the blip has usually
+ * cleared and CrofAI is still far cheaper than Infron.
+ *
+ * Behind CrofAI for cutover sessions despite the marginally better cache-read
+ * price ($0.0028/M against $0.0030/M) because DeepSeek is the side that
+ * repriced, and because of the
+ * failure record that made this a cascade at all: on 2026-08-03/04 it shed peak
+ * load with 3,934 x 503 "Service is too busy" and diverted 4,997 sessions at
+ * once, and on 2026-08-11 it accepted 650 requests in six hours and then sent
+ * nothing, tripping the four-minute first-token watchdog. Note that the
+ * watchdog is DeepSeek-direct-only (see `handleDeepSeekStream`); no equivalent
+ * guards the CrofAI lane now serving in front of it.
+ */
+export const DEEPSEEK_OFFICIAL_PROVIDER_ROUTE =
+  'deepseek/official' satisfies ProviderRouteId
 /**
  * DeepSeek V4 Flash's LAST resort: the Infron lane, tier 3 of THREE.
  *
@@ -145,12 +183,12 @@ export const DEEPSEEK_CROF_PROVIDER_ROUTE =
  * when 4,997 sessions diverted onto it in one window it returned 13,286
  * saturation 429s and then ran out of credits entirely.
  *
- * So it sits behind {@link DEEPSEEK_CROF_PROVIDER_ROUTE} and ahead of {@link
- * DEEPSEEK_OPENROUTER_PROVIDER_ROUTE}: cheapest on FRESH input, which is what a
- * cold session pays, while CrofAI ahead of it wins the warm case on cache
- * reads, and a lane that cannot run dry backstops the storm. This only works because the cascade RE-PINS on each hop — a
- * session that finds Infron saturated moves to OpenRouter permanently, rather
- * than paying a doomed Infron attempt on every later turn.
+ * So it sits behind {@link DEEPSEEK_CROF_PROVIDER_ROUTE} and {@link
+ * DEEPSEEK_OFFICIAL_PROVIDER_ROUTE}: cheapest on FRESH input, which is what a
+ * cold session pays, while the two lanes ahead of it win the warm case on cache
+ * reads, and it must never be the lane a session settles on. This only works
+ * because the cascade RE-PINS on each hop — a session that finds Infron
+ * saturated does not pay a doomed Infron attempt on every later turn.
  *
  * The `makora` in the name is historical (that upstream went offline in
  * 2026-07). The id says only *that* a session is on this lane, never which
