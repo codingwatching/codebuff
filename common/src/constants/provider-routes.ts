@@ -120,22 +120,28 @@ export const MIMO_NOVITA_PROVIDER_ROUTE =
  * already paid to warm. See `deepseekEntryLane` and
  * docs/freebuff-deepseek-provider-cutover.md.
  *
- * Reference prices, from live billing 2026-08-04, per M:
+ * Reference prices per M — CrofAI/Infron/OpenRouter from live billing
+ * 2026-08-04, DeepSeek from its published card after the 16:00 UTC 2026-08-16
+ * repricing:
  *
- *                   input    cache read   output
- *   CrofAI 0731     0.1200     0.0030     0.2100
- *   Infron alibaba  0.0690     0.0144     0.1375
- *   OpenRouter      0.0881     0.0176     0.1761
- *   DeepSeek direct 0.1400     0.0028     0.2800
+ *                        input    cache read   output
+ *   CrofAI 0731         0.1200     0.0030     0.2100
+ *   Infron alibaba      0.0690     0.0144     0.1375
+ *   OpenRouter          0.0881     0.0176     0.1761
+ *   DeepSeek off-peak   0.2200     0.0070     0.6600
+ *   DeepSeek peak       0.4400     0.0140     1.3200
  *
- * CrofAI is DEARER on fresh input and output and cheaper than everything except
- * DeepSeek direct on cache reads — but a coding turn re-sends its whole prefix
- * every step, so cache reads are most of the tokens and that is the term that
- * decides the bill. Against Infron, 0.0030 vs 0.0144 is a 4.8x cut on the
- * dominant term; break-even is around an 82% cache-hit rate, which a
- * sticky-pinned session clears comfortably and a single cold turn does not.
- * That is the trade this ordering makes, and it is why the ordering would be
- * wrong if these lanes were not sticky.
+ * A coding turn re-sends its whole prefix every step, so cache reads are most
+ * of the tokens and that is the term that decides the bill. Against Infron,
+ * 0.0030 vs 0.0144 is a 4.8x cut on the dominant term; break-even is around an
+ * 82% cache-hit rate, which a sticky-pinned session clears comfortably and a
+ * single cold turn does not. That is the trade this ordering makes, and it is
+ * why the ordering would be wrong if these lanes were not sticky.
+ *
+ * The 2026-08-16 repricing also made CrofAI the cheapest lane outright rather
+ * than a near-tie: it is now cheaper than DeepSeek direct on every term, by
+ * 2.3x on cache reads off-peak and 4.7x at peak. The lane ORDER has not been
+ * revisited to match — see docs/freebuff-deepseek-provider-cutover.md.
  *
  * It also serves `deepseek-v4-flash-0731` — the GA build, the same one
  * DeepSeek's own API serves — where Infron's undated slug is a frozen preview
@@ -157,9 +163,10 @@ export const DEEPSEEK_CROF_PROVIDER_ROUTE =
  * the order behind this lane, because by the next turn the blip has usually
  * cleared and CrofAI is still far cheaper than Infron.
  *
- * Behind CrofAI for cutover sessions despite the marginally better cache-read
- * price ($0.0028/M against $0.0030/M) because DeepSeek is the side that
- * repriced, and because of the
+ * Behind CrofAI for cutover sessions because DeepSeek is the side that
+ * repriced — as of 16:00 UTC 2026-08-16 its cache reads are $0.0070/M off-peak
+ * and $0.0140/M at peak against CrofAI's $0.0030, so what used to be a
+ * marginal loss on that term is now a 2.3-4.7x one — and because of the
  * failure record that made this a cascade at all: on 2026-08-03/04 it shed peak
  * load with 3,934 x 503 "Service is too busy" and diverted 4,997 sessions at
  * once, and on 2026-08-11 it accepted 650 requests in six hours and then sent
@@ -254,11 +261,14 @@ export const DEEPSEEK_OPENROUTER_PROVIDER_ROUTE =
  * there is no tradeoff to make here, which is why the list is short.
  *
  * DELIBERATELY NOT `deepseek` (OpenRouter's DeepSeek-first-party endpoint).
- * It has by far the best cache read ($0.0028/M) and is tempting for that alone,
- * but it is the same upstream whose failure triggers this fallback, reached
- * through a middleman — pointing the lane there would divert an outage onto
- * itself. The Infron lane can use the 0731 model without this problem because
- * it pins independent Alibaba upstreams.
+ * It had by far the best cache read of any entry here, and was tempting for
+ * that alone, but it is the same upstream whose failure triggers this fallback,
+ * reached through a middleman — pointing the lane there would divert an outage
+ * onto itself. The Infron lane can use the 0731 model without this problem
+ * because it pins independent Alibaba upstreams. (The price argument has since
+ * evaporated anyway: DeepSeek's 2026-08-16 repricing put first-party cache
+ * reads at $0.0070/M off-peak and $0.0140/M at peak, at or above the tail
+ * quoted above. The routing reason is the one that still stands.)
  *
  * `deepinfra/fp4` is skipped despite sitting third on price: fp4 quantization,
  * and a 65,536-token output cap that would truncate long agent turns. fp8 is
