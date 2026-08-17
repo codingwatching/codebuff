@@ -8,6 +8,7 @@ export const PROVIDER_ROUTE_IDS = [
   'infron/makora',
   'deepseek/openrouter',
   'deepseek/crof',
+  'deepseek/runinfra',
   'deepseek/official',
 ] as const
 
@@ -121,24 +122,25 @@ export const MIMO_NOVITA_PROVIDER_ROUTE =
  * docs/freebuff-deepseek-provider-cutover.md.
  *
  * Reference prices per M — CrofAI/Infron/OpenRouter from live billing
- * 2026-08-04, DeepSeek from its published card after the 16:00 UTC 2026-08-16
- * repricing:
+ * 2026-08-04, RunInfra from runinfra.ai/pricing and Infron re-read from its
+ * catalog on 2026-08-16, DeepSeek from its published card after the 16:00 UTC
+ * 2026-08-16 repricing:
  *
  *                        input    cache read   output
  *   CrofAI 0731         0.1200     0.0030     0.2100
- *   Infron alibaba      0.0690     0.0144     0.1375
- *   OpenRouter          0.0881     0.0176     0.1761
+ *   RunInfra 0731       0.1300     0.0100     0.2700
+ *   Infron alibaba      0.2120     0.0210     0.6360
  *   DeepSeek off-peak   0.2200     0.0070     0.6600
  *   DeepSeek peak       0.4400     0.0140     1.3200
+ *   (retired) OpenRouter 0.0881    0.0176     0.1761
  *
  * A coding turn re-sends its whole prefix every step, so cache reads are most
- * of the tokens and that is the term that decides the bill. Against Infron,
- * 0.0030 vs 0.0144 is a 4.8x cut on the dominant term; break-even is around an
- * 82% cache-hit rate, which a sticky-pinned session clears comfortably and a
- * single cold turn does not. That is the trade this ordering makes, and it is
- * why the ordering would be wrong if these lanes were not sticky.
+ * of the tokens and that is the term that decides the bill. Infron's own
+ * 2026-08-16 repricing (from 0.0690/0.0144/0.1375) turned it from the cheapest
+ * lane into the dearest, which is what put {@link
+ * DEEPSEEK_RUNINFRA_PROVIDER_ROUTE} ahead of it.
  *
- * The 2026-08-16 repricing also made CrofAI the cheapest lane outright rather
+ * The DeepSeek repricing also made CrofAI the cheapest lane outright rather
  * than a near-tie: it is now cheaper than DeepSeek direct on every term, by
  * 2.3x on cache reads off-peak and 4.7x at peak. The lane ORDER has not been
  * revisited to match — see docs/freebuff-deepseek-provider-cutover.md.
@@ -161,7 +163,7 @@ export const DEEPSEEK_CROF_PROVIDER_ROUTE =
  * CrofAI that just failed would pay a cold prefill to reach a lane we already
  * know is unhealthy. The pin skips CrofAI as an ENTRY point only: it stays in
  * the order behind this lane, because by the next turn the blip has usually
- * cleared and CrofAI is still far cheaper than Infron.
+ * cleared and CrofAI is still far cheaper than the lanes below.
  *
  * Behind CrofAI for cutover sessions because DeepSeek is the side that
  * repriced — as of 16:00 UTC 2026-08-16 its cache reads are $0.0070/M off-peak
@@ -177,25 +179,30 @@ export const DEEPSEEK_CROF_PROVIDER_ROUTE =
 export const DEEPSEEK_OFFICIAL_PROVIDER_ROUTE =
   'deepseek/official' satisfies ProviderRouteId
 /**
- * DeepSeek V4 Flash's LAST resort: the Infron lane, tier 3 of THREE.
+ * DeepSeek V4 Flash's LAST resort: the Infron lane, now tier 4 of four.
  *
- * It gets ONE attempt and leaves no resumable pin (see `asDeepSeekLane`): its
- * cache reads are 4.8x CrofAI's, so a session must never settle here.
+ * DEMOTED FROM TIER 3 ON 2026-08-16. It was the cheapest route we had —
+ * measured live 2026-08-04 on a 45,008-token prompt at $0.069/M input and
+ * ~$0.0144/M cache read — and Infron then repriced its Alibaba Cloud Int.
+ * group to $0.212/M input, $0.021/M cache read and $0.636/M output. That is
+ * 3.1x, 1.4x and 4.6x, and it turns the cheapest lane into the dearest one.
  *
- * Ordering is deliberate and was arrived at the hard way. Infron is the
- * cheapest route we have for this model — measured live 2026-08-04 on a
- * 45,008-token prompt, $0.069/M input and ~$0.0144/M cache read against the
- * OpenRouter lane's $0.0881 and $0.0176, so ~22% cheaper cold and ~13% warm.
- * But it is a single aggregator account behind one Alibaba provider group, and
- * when 4,997 sessions diverted onto it in one window it returned 13,286
- * saturation 429s and then ran out of credits entirely.
+ * {@link DEEPSEEK_RUNINFRA_PROVIDER_ROUTE} is cheaper on input, cache reads and
+ * output alike, and a measured agent turn confirms the list prices rather than
+ * contradicting them: costed on one real 29-call buffbench turn, RunInfra came
+ * to $0.0444 against this lane's $0.0820 — 1.85x. So Infron ahead of RunInfra
+ * is wrong on both paper and practice.
  *
- * So it sits behind {@link DEEPSEEK_CROF_PROVIDER_ROUTE} and {@link
- * DEEPSEEK_OFFICIAL_PROVIDER_ROUTE}: cheapest on FRESH input, which is what a
- * cold session pays, while the two lanes ahead of it win the warm case on cache
- * reads, and it must never be the lane a session settles on. This only works
- * because the cascade RE-PINS on each hop — a session that finds Infron
- * saturated does not pay a doomed Infron attempt on every later turn.
+ * So it sits behind {@link DEEPSEEK_CROF_PROVIDER_ROUTE}, {@link
+ * DEEPSEEK_OFFICIAL_PROVIDER_ROUTE} and {@link
+ * DEEPSEEK_RUNINFRA_PROVIDER_ROUTE}, and it must never be the lane a session
+ * settles on. Its own failure mode is why nothing cheap may sit below it: a
+ * single aggregator account behind one Alibaba provider group, which when
+ * 4,997 sessions diverted onto it in one window returned 13,286 saturation
+ * 429s and then ran out of credits entirely, leaking the raw billing error to
+ * 1,086 users. This only works because the cascade RE-PINS on each hop — a
+ * session that finds Infron saturated does not pay a doomed Infron attempt on
+ * every later turn.
  *
  * The `makora` in the name is historical (that upstream went offline in
  * 2026-07). The id says only *that* a session is on this lane, never which
@@ -206,6 +213,69 @@ export const DEEPSEEK_OFFICIAL_PROVIDER_ROUTE =
  */
 export const DEEPSEEK_INFRON_MAKORA_PROVIDER_ROUTE =
   'infron/makora' satisfies ProviderRouteId
+/**
+ * DeepSeek V4 Flash's SECOND backup: the RunInfra lane, tier 3 of four.
+ *
+ * Added because the three lanes ahead of it have each failed in the one way a
+ * cascade cannot absorb — by running out of money. DeepSeek shed peak load,
+ * Infron's aggregator account went dry and leaked its billing error to 1,086
+ * users, and CrofAI returned 401 "Not Enough Credits" off its own prepaid
+ * balance. Three lanes whose failures are that correlated with a divert storm
+ * are, on the worst day, one lane. RunInfra is a fourth independent account
+ * and balance behind them; that independence, not its price, is the reason it
+ * exists.
+ *
+ * List prices are on {@link DEEPSEEK_CROF_PROVIDER_ROUTE}. It is dearer than
+ * CrofAI on all three terms, so it can never sit above it; it sits above Infron
+ * because Infron repriced on 2026-08-16 into the dearest lane we have.
+ *
+ * VALIDATED ON A REAL AGENT TURN rather than a price table, which is unusual
+ * for this file and worth the words. One buffbench task was run end to end
+ * through this lane against a local server: 29 model calls, 1,202,712 input
+ * tokens (82.3% cached), 25,287 output tokens. Costing that exact token
+ * profile against each lane's card:
+ *
+ *   CrofAI            $0.0338
+ *   RunInfra          $0.0444
+ *   DeepSeek off-peak $0.0705
+ *   Infron            $0.0820
+ *   DeepSeek peak     $0.1409
+ *
+ * So RunInfra ahead of Infron is right by 1.85x on measured traffic, which is
+ * what this lane's placement rests on. Note the DeepSeek rows sit BELOW
+ * RunInfra on this workload since the 2026-08-16 repricing — that is a question
+ * about the entry lane, not about this one, and it belongs to
+ * docs/freebuff-deepseek-provider-cutover.md rather than here.
+ *
+ * The cache has a COLD START. Over that turn it served 82.3% of input tokens
+ * from cache, but the aggregate hides the shape: the first few calls missed
+ * outright despite sharing a large prefix, then it held at 98-99% for the
+ * remaining ~25 calls. A synthetic probe showed the same thing (three misses,
+ * then 99.1% hits), with ~600ms latency on a hit against ~1,500ms on a miss.
+ * `prompt_cache_key` did not pin routing. The practical consequence is that a
+ * long session gets the list rate and a very short one pays closer to fresh
+ * input — acceptable for a lane only sustained failure reaches.
+ *
+ * Two further constraints, both measured rather than published: its hard output
+ * ceiling is 32,768 tokens (see RUNINFRA_DEEPSEEK_V4_FLASH_MAX_TOKENS — below
+ * the 48,000 budget the product considers safe, so expect more empty
+ * length-capped answers here), and it returns no `cost`, so its price table
+ * bills every request rather than catching a rare gap.
+ *
+ * What makes it a better tier-3 than the OpenRouter lane it replaced in the
+ * cascade: that lane priced cache reads at $0.0176/M and was reached 1,205
+ * times in 24h, which is how DeepSeek's daily bill went from $9k to $39.7k.
+ * RunInfra is 1.76x under it on exactly that term. Depth still costs something
+ * — 3.3x CrofAI's cache read — which is why it leaves NO RESUMABLE PIN (see
+ * `asDeepSeekLane`): a session that touches it starts its next turn from the
+ * primary again rather than settling here for the rest of its hour.
+ *
+ * Like its peers the id names the LANE, not the upstream, and it is persisted
+ * in `free_session.provider_route` and read back unvalidated — so renaming the
+ * value would need a migration, while repointing what serves it would not.
+ */
+export const DEEPSEEK_RUNINFRA_PROVIDER_ROUTE =
+  'deepseek/runinfra' satisfies ProviderRouteId
 /**
  * RETIRED as a DeepSeek lane on 2026-08-11. Kept as a recognized id because it
  * is persisted in `free_session.provider_route` and read back unvalidated —
