@@ -192,13 +192,12 @@ export interface FreebuffTrustLimits {
  *
  * ## How these numbers were chosen
  *
- * `established` × `full` REPRODUCES the flat limits that shipped before this
- * file existed (5,000/day, 3,000/5h, $50, 6 premium), and `established` ×
- * `limited` reproduces the limited row (3,000/day, 2,000/5h). That is
- * deliberate and is what makes this change safe to ship:
- * the population that already looked like ordinary heavy users keeps exactly
- * what it had, `core` is the raise, and only accounts with no history at all
- * are tightened.
+ * `established` × `full` is the current flat-limit fallback (5,000/day,
+ * 3,000/5h, $50, 5 premium), and `established` × `limited` reproduces the
+ * limited row (3,000/day, 2,000/5h). Keeping the matrix aligned with the flat
+ * fallback is deliberate: observe/off mode, resolver failures and enforced
+ * `established` accounts must all receive the same baseline. `core` remains
+ * the raise, while the levels below `established` tighten newer accounts.
  *
  * Sizing for the two new levels below `established` is anchored on the
  * per-user-per-day distributions in `free-mode-rate-limiter.ts` (full tier p50
@@ -247,7 +246,7 @@ export const FREEBUFF_TRUST_LIMITS: Record<
       messagesPer5Hours: 3_000,
       messagesPerDay: 5_000,
       dailySpendUsd: 50,
-      premiumSessionsPerDay: 6,
+      premiumSessionsPerDay: 5,
     },
     core: {
       userMessagesPerDay: 1_000,

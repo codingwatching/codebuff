@@ -66,14 +66,14 @@ describe('level ordering', () => {
 })
 
 describe('limit matrix', () => {
-  it('reproduces the pre-existing flat limits at established/full', () => {
-    // This is the safety property of the whole rollout: the population that
-    // already looked like ordinary heavy users must keep exactly what it had.
+  it('matches the flat fallback limits at established/full', () => {
+    // The flat pool and the enforced fallback must not silently meter the same
+    // established account differently.
     const full = freebuffTrustLimits('full', 'established')
     expect(full.messagesPerDay).toBe(5_000)
     expect(full.messagesPer5Hours).toBe(3_000)
     expect(full.dailySpendUsd).toBe(50)
-    expect(full.premiumSessionsPerDay).toBe(6)
+    expect(full.premiumSessionsPerDay).toBe(5)
 
     const limited = freebuffTrustLimits('limited', 'established')
     expect(limited.messagesPerDay).toBe(3_000)
@@ -403,7 +403,7 @@ describe('wire shape', () => {
     )
     expect(info).not.toHaveProperty('limits')
 
-    // Scoped to the distinctive values. Small ones (a $3 spend cap, 6 premium
+    // Scoped to the distinctive values. Small ones (a $3 spend cap, 5 premium
     // sessions) collide with legitimate point values in the copy — "worth 3
     // points" is not a leaked limit, and asserting on them would fail for the
     // wrong reason.
@@ -515,7 +515,7 @@ describe('wire shape', () => {
 })
 
 describe('failure behaviour', () => {
-  it('falls back to the level that reproduces the old flat limits', () => {
+  it('falls back to the level that matches the flat limits', () => {
     // A broken resolver must cost us the enforcement, never the users: if this
     // were 'new', one degraded query would throttle the whole product.
     expect(FREEBUFF_TRUST_FALLBACK_LEVEL).toBe('established')
