@@ -12,6 +12,7 @@ import {
   toFreebuffStandingInfo,
   type FreebuffTrustSignals,
 } from '../constants/freebuff-trust'
+import { FREEBUFF_PREMIUM_SESSION_LIMIT } from '../constants/freebuff-models'
 
 const NOW = new Date('2026-08-11T00:00:00Z')
 const DAY_MS = 24 * 60 * 60 * 1000
@@ -73,7 +74,14 @@ describe('limit matrix', () => {
     expect(full.messagesPerDay).toBe(5_000)
     expect(full.messagesPer5Hours).toBe(3_000)
     expect(full.dailySpendUsd).toBe(50)
-    expect(full.premiumSessionsPerDay).toBe(5)
+    // Premium is deliberately NOT part of that equality any more. It left this
+    // matrix when Levels shipped (common/src/constants/freebuff-levels.ts):
+    // the floor here is one session, and everything above it is earned and
+    // added on top. Pinning it to the old flat 5 would re-assert exactly the
+    // thing that change undid.
+    expect(full.premiumSessionsPerDay).toBe(
+      FREEBUFF_PREMIUM_SESSION_LIMIT,
+    )
 
     const limited = freebuffTrustLimits('limited', 'established')
     expect(limited.messagesPerDay).toBe(3_000)
