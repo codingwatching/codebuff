@@ -8,6 +8,7 @@ export const PROVIDER_ROUTE_IDS = [
   'infron/makora',
   'deepseek/openrouter',
   'deepseek/crof',
+  'deepseek/luminal',
   'deepseek/runinfra',
   'deepseek/official',
 ] as const
@@ -176,6 +177,46 @@ export const DEEPSEEK_CROF_PROVIDER_ROUTE =
  * watchdog is DeepSeek-direct-only (see `handleDeepSeekStream`); no equivalent
  * guards the CrofAI lane now serving in front of it.
  */
+/**
+ * DeepSeek V4 Flash's Luminal lane — a small FREE grant, and the only pin in
+ * this file that is RATIONED rather than reactive.
+ *
+ * Every other route id here records where a session ENDED UP after something
+ * failed. This one records that a session WON a slot: Luminal donated a slice
+ * of Flash capacity far below our volume, so the pin is minted by an admission
+ * controller (web/src/server/free-session/luminal-admission.ts) that hands out
+ * a bounded number of them and stops when Luminal starts refusing.
+ *
+ * It is FIRST in the cascade for the sessions that carry it, which no other
+ * cheap-lane experiment has earned, because it is free and the lanes behind it
+ * are not: CrofAI's cache reads are $0.0030/M, DeepSeek direct's are
+ * $0.0070-0.0140/M, and this is $0. The OpenRouter retirement on {@link
+ * DEEPSEEK_CROF_PROVIDER_ROUTE} is the cautionary tale for adding a lane for
+ * depth; this is the opposite — a lane added for price, capped so it cannot
+ * become depth.
+ *
+ * Measured against the endpoint on 2026-08-20, which is what made this
+ * routable at all:
+ *
+ *   - It SHEDS rather than queues: HTTP 429 in 87-98ms with `retry-after: 1`
+ *     and a structured `rate_limit_error` body. A refused session costs one
+ *     fast round trip and diverts.
+ *   - REQUEST-bound, not token-bound. 32k prompts shed at ~175-224k tok/s
+ *     while 128k prompts sustained 498k tok/s untouched, so the served budget
+ *     (~5-7 req/s) does not shrink as prompts grow.
+ *   - Prefix caching holds at 99.4-99.9% across concurrency, against
+ *     production Flash's 98.8% — which is why admission is per SESSION. A
+ *     request-level share would make every request a cold prefill and consume
+ *     the grant on prefill alone.
+ *
+ * A 429 here is TERMINAL for the session, unlike a divert off any other lane:
+ * the cascade re-pins it onward and it never comes back. That is deliberate.
+ * The lanes behind this one are sized to take our whole volume, so there is
+ * nothing to gain by retrying a rationed lane and one wasted round trip per
+ * turn to lose.
+ */
+export const DEEPSEEK_LUMINAL_PROVIDER_ROUTE =
+  'deepseek/luminal' satisfies ProviderRouteId
 export const DEEPSEEK_OFFICIAL_PROVIDER_ROUTE =
   'deepseek/official' satisfies ProviderRouteId
 /**
