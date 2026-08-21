@@ -6,6 +6,7 @@ export const PROVIDER_ROUTE_IDS = [
   'openrouter/novita/fp8',
   'mimo/openrouter',
   'infron/makora',
+  'glm/crof',
   'deepseek/openrouter',
   'deepseek/crof',
   'deepseek/luminal',
@@ -106,6 +107,32 @@ export function mimoOpenRouterProvider(): Record<string, unknown> {
  */
 export const MIMO_NOVITA_PROVIDER_ROUTE =
   'openrouter/novita/fp8' satisfies ProviderRouteId
+/**
+ * GLM 5.2's CrofAI lane — the BACKUP, as of the 2026-08-20 Infron cutover, and
+ * the mark that says a session has diverted onto it.
+ *
+ * GLM 5.2 entered the day served by CrofAI alone. It now runs a two-lane sticky
+ * cascade — Infron's Alibaba group first, CrofAI behind it — so this id exists
+ * for the same reason {@link MIMO_OPENROUTER_PROVIDER_ROUTE} does: to record
+ * that a session left the entry lane and must not be sent back, because each
+ * upstream keeps its own prompt cache and flapping between them re-pays a cold
+ * prefill every turn.
+ *
+ * NOTE THE DIRECTION OF THE MONEY, because it is the reverse of every other
+ * cascade in this file: CrofAI — the BACKUP — is cheaper on all three terms,
+ * by 1.83x on input and output and 2.75x on cache reads. So this lane is not
+ * depth bought with money, it is depth bought with a SECOND ACCOUNT AND A
+ * SECOND BALANCE — the property {@link DEEPSEEK_RUNINFRA_PROVIDER_ROUTE} exists
+ * for, and the one CrofAI's own 401 "Not Enough Credits" proved GLM needed. The
+ * order was set by request; the measured table behind those ratios is in
+ * web/src/llm-api/glm-router.ts.
+ *
+ * Like its peers the id names the LANE, not the upstream — that is
+ * INFRON_PROVIDER_ORDER, keyed by model — so repointing which Alibaba region
+ * serves the entry lane needs no migration, while renaming this value would:
+ * it is persisted in `free_session.provider_route` and read back unvalidated.
+ */
+export const GLM_CROF_PROVIDER_ROUTE = 'glm/crof' satisfies ProviderRouteId
 /**
  * DeepSeek V4 Flash's CrofAI lane — and, since the 2026-08-15 cutover, the
  * COHORT MARK that says a session belongs on it.
