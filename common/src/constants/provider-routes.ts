@@ -10,6 +10,7 @@ export const PROVIDER_ROUTE_IDS = [
   'glm/infron',
   'deepseek/openrouter',
   'deepseek/crof',
+  'deepseek/cheaper-inference',
   'deepseek/luminal',
   'deepseek/runinfra',
   'deepseek/official',
@@ -280,6 +281,29 @@ export const DEEPSEEK_LUMINAL_PROVIDER_ROUTE =
   'deepseek/luminal' satisfies ProviderRouteId
 export const DEEPSEEK_OFFICIAL_PROVIDER_ROUTE =
   'deepseek/official' satisfies ProviderRouteId
+/**
+ * DeepSeek V4 Pro's entry lane as of 2026-08-21: the Cheaper Inference gateway.
+ *
+ * It replaces CrofAI at the front of Pro's cascade AND removes it from the
+ * cascade entirely — CrofAI's Pro lane was the dated `deepseek-v4-pro-0813`
+ * slug, stood down the same day as too dear and too inconsistent. So Pro's two
+ * lanes are now this and DeepSeek direct.
+ *
+ * Cheaper on every term than the direct lane behind it ($0.3045/$0.002538/$0.609
+ * per M against $0.66/$0.022/$1.98 off-peak) and, unlike direct, FLAT — no peak
+ * card. That last point is most of the value: direct doubles for ten hours a
+ * day and those windows carry 26% of tokens against 46% of spend.
+ *
+ * The cache question this file's other entries keep raising was measured here
+ * rather than assumed, and the first answer was wrong. A 13-sample probe showed
+ * ~70% and read as disqualifying; at scale, warm, it is 100% over 60 sequential
+ * and 95% over 40 concurrent, holding on both upstreams this gateway routes
+ * between. Cold-start misses, not routing instability. Compare lanes at their
+ * MEASURED WARM hit rate — the rule that has now been arrived at three times in
+ * this file.
+ */
+export const DEEPSEEK_CHEAPER_INFERENCE_PROVIDER_ROUTE =
+  'deepseek/cheaper-inference' satisfies ProviderRouteId
 /**
  * DeepSeek V4 Flash's LAST resort: the Infron lane, now tier 4 of four.
  *
