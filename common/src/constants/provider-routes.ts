@@ -7,6 +7,7 @@ export const PROVIDER_ROUTE_IDS = [
   'mimo/openrouter',
   'infron/makora',
   'glm/crof',
+  'glm/infron',
   'deepseek/openrouter',
   'deepseek/crof',
   'deepseek/luminal',
@@ -108,8 +109,13 @@ export function mimoOpenRouterProvider(): Record<string, unknown> {
 export const MIMO_NOVITA_PROVIDER_ROUTE =
   'openrouter/novita/fp8' satisfies ProviderRouteId
 /**
- * GLM 5.2's CrofAI lane — the BACKUP, as of the 2026-08-20 Infron cutover, and
- * the mark that says a session has diverted onto it.
+ * GLM 5.2's CrofAI lane. Was the backup for one day (the 2026-08-20 Infron
+ * cutover); the ENTRY lane again since 2026-08-21, when production measurement
+ * showed Infron costs 2x — see GLM_INFRON_PROVIDER_ROUTE for the numbers.
+ *
+ * Still recognized on READ so the handful of sessions pinned here during that
+ * day keep working. The pin is now inert: it names the lane they would enter
+ * anyway.
  *
  * GLM 5.2 entered the day served by CrofAI alone. It now runs a two-lane sticky
  * cascade — Infron's Alibaba group first, CrofAI behind it — so this id exists
@@ -133,6 +139,34 @@ export const MIMO_NOVITA_PROVIDER_ROUTE =
  * it is persisted in `free_session.provider_route` and read back unvalidated.
  */
 export const GLM_CROF_PROVIDER_ROUTE = 'glm/crof' satisfies ProviderRouteId
+/**
+ * GLM 5.2's Infron lane — the BACKUP again as of 2026-08-21, after one hour of
+ * head-to-head production traffic settled the question the cutover opened.
+ *
+ * Both lanes served comparable work in the same window (147k vs 143k average
+ * input tokens, 95 vs 89 distinct users):
+ *
+ *              msgs   cache    $/msg      $/M input   median $/prompt
+ *   Infron     2,014  94.6%    0.024241   0.1640      0.1265
+ *   CrofAI     1,203  89.0%    0.012063   0.0842      0.0615
+ *
+ * Infron really does cache BETTER — 94.6% against 89.0% — and is still 2.0x
+ * dearer per message and 2.06x per user prompt, because its cache reads cost
+ * 2.75x. The measurement matches the rate card to within a percent, so this is
+ * price, not noise.
+ *
+ * IT CANNOT BE FIXED BY WARMING. Solving h*0.1375 + (1-h)*0.55 = 0.0842 for
+ * Infron's break-even hit rate gives h = 1.129 — above 100%. At a perfect cache
+ * Infron would still cost $0.1375/M against CrofAI's measured $0.0842. The
+ * order can only flip if CrofAI falls below ~65% cache while Infron holds
+ * ~100%, so do not re-litigate this on a single bad CrofAI hour.
+ *
+ * What Infron is still here for is what it was always actually buying: a second
+ * account and a second prepaid balance behind a model whose entitlement is
+ * earned. CrofAI answers 401 "Not Enough Credits" when its balance runs dry,
+ * and that used to be a total outage.
+ */
+export const GLM_INFRON_PROVIDER_ROUTE = 'glm/infron' satisfies ProviderRouteId
 /**
  * DeepSeek V4 Flash's CrofAI lane — and, since the 2026-08-15 cutover, the
  * COHORT MARK that says a session belongs on it.
