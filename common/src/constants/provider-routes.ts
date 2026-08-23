@@ -67,11 +67,20 @@ export const FIREWORKS_SERVERLESS_PROVIDER_ROUTE =
 export const MINIMAX_OFFICIAL_PROVIDER_ROUTE =
   'minimax/official' satisfies ProviderRouteId
 /**
- * Marks a MiMo session as diverted off Xiaomi's direct API to the OpenRouter
- * lane. Like {@link DEEPSEEK_INFRON_MAKORA_PROVIDER_ROUTE} it says *that* the
- * session is on the fallback, NOT which upstream serves it — that is
- * {@link MIMO_OPENROUTER_UPSTREAM} below, so repointing it also moves every
- * session already pinned here, with no migration.
+ * MiMo 2.5's OpenRouter lane — the ENTRY lane since 2026-08-23, when Xiaomi's
+ * direct rate limit made it untenable as the primary (see mimo-router.ts for
+ * the measured 429 rate that settled it).
+ *
+ * THE PIN IS NOW INERT, exactly as {@link GLM_CROF_PROVIDER_ROUTE} became when
+ * its lane was promoted: it names the lane a session would enter anyway. It is
+ * still recognized on READ, and must stay so, because ~48k sessions a day were
+ * pinned here under the old order and their pins outlive the deploy. Reading it
+ * as "start at the primary" is exactly right for them — they are already warm
+ * on this lane, so they carry on with no cold prefill.
+ *
+ * Like {@link DEEPSEEK_INFRON_MAKORA_PROVIDER_ROUTE} it says *which lane*, NOT
+ * which upstream serves it — that is {@link MIMO_OPENROUTER_UPSTREAM_ORDER}
+ * below, so repointing the upstream moves every session here with no migration.
  *
  * Named generically on purpose. Its predecessor
  * {@link MIMO_NOVITA_PROVIDER_ROUTE} baked the upstream into a value that gets
@@ -80,6 +89,22 @@ export const MINIMAX_OFFICIAL_PROVIDER_ROUTE =
  */
 export const MIMO_OPENROUTER_PROVIDER_ROUTE =
   'mimo/openrouter' satisfies ProviderRouteId
+/**
+ * Marks a MiMo session as diverted OFF the OpenRouter lane onto Xiaomi's direct
+ * API — the backup since the 2026-08-23 swap, and the direction this pin has
+ * pointed only since then.
+ *
+ * It exists for the reason {@link GLM_CROF_PROVIDER_ROUTE} does: depth bought
+ * not with money but with a SECOND ACCOUNT AND A SECOND BALANCE. Both MiMo
+ * lanes ran dry inside 14 hours (Xiaomi 2026-08-22 17:30Z, OpenRouter
+ * 2026-08-23 07:35Z), which is the whole argument for keeping two funded
+ * accounts and a 402 that can cross between them.
+ *
+ * Reuses the long-declared but never-written `xiaomi/official` id, so no
+ * `PROVIDER_ROUTE_IDS` entry had to be added.
+ */
+export const MIMO_XIAOMI_PROVIDER_ROUTE =
+  'xiaomi/official' satisfies ProviderRouteId
 /**
  * The upstreams that serve {@link MIMO_OPENROUTER_PROVIDER_ROUTE}, preferred
  * first: Xiaomi's OWN endpoint, reached through OpenRouter's account rather
@@ -103,7 +128,8 @@ export const MIMO_OPENROUTER_PROVIDER_ROUTE =
  * Xiaomi's $0.14/$0.28) and prices cache reads at $0.0034/M against $0.0028/M.
  * Xiaomi's OpenRouter endpoint is priced identically to our direct rate, so the
  * lane costs the same as the primary and differs only in whose rate limit and
- * prompt cache it draws on — which is the entire point of having it.
+ * prompt cache it draws on — which is, since 2026-08-23, the entire reason this
+ * lane is the ENTRY rather than the backup.
  */
 export const MIMO_OPENROUTER_UPSTREAM_ORDER = [
   'xiaomi/fp8',
@@ -145,9 +171,10 @@ export function mimoOpenRouterProvider(): Record<string, unknown> {
 /**
  * LEGACY MiMo fallback pin, written while the OpenRouter lane was hardcoded to
  * Novita FP8. Still recognized on READ so sessions pinned before
- * {@link MIMO_OPENROUTER_PROVIDER_ROUTE} shipped keep serving from the fallback
+ * {@link MIMO_OPENROUTER_PROVIDER_ROUTE} shipped keep serving from that lane
  * instead of silently reverting to a Xiaomi-direct attempt they already failed.
- * Never written anymore; expires with its session.
+ * Never written anymore; expires with its session. Inert since the 2026-08-23
+ * swap for the same reason its successor is — see there.
  */
 export const MIMO_NOVITA_PROVIDER_ROUTE =
   'openrouter/novita/fp8' satisfies ProviderRouteId
