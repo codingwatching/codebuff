@@ -14,9 +14,51 @@ export const PROVIDER_ROUTE_IDS = [
   'deepseek/luminal',
   'deepseek/runinfra',
   'deepseek/official',
+  'luna/fallback',
+  'luna/primary',
 ] as const
 
 export type ProviderRouteId = (typeof PROVIDER_ROUTE_IDS)[number]
+
+/**
+ * A GPT-5.6 Luna session that diverted off its primary lane because that lane
+ * was OUT OF CAPACITY, and should now enter on the fallback instead.
+ *
+ * Named for the ROLE, not the upstream, and deliberately so: this value is
+ * persisted in `free_session.provider_route` and read back unvalidated, so an
+ * id naming its provider either forces a migration or becomes a name that lies
+ * the moment the fallback moves. {@link MIMO_OPENROUTER_PROVIDER_ROUTE} carries
+ * the same warning for the same reason. {@link LUNA_FALLBACK_UPSTREAM} below
+ * says who currently serves it.
+ *
+ * Why pin at all: Luna's lanes each keep their OWN prompt cache, and an agent
+ * turn re-sends its whole prefix every step, so ~96.5% of its tokens are cache
+ * reads. Moving a live session between providers therefore costs a full cold
+ * prefill on a prefix it has already paid to warm. Pinning moves SESSIONS, not
+ * requests: the session that overflowed stays on the fallback and warms there
+ * once, instead of re-paying at every turn.
+ */
+export const LUNA_FALLBACK_PROVIDER_ROUTE =
+  'luna/fallback' satisfies ProviderRouteId
+
+/**
+ * A Luna session explicitly returned to the primary lane after the fallback
+ * failed it.
+ *
+ * Distinct from UNPINNED, which also enters on the primary: an unpinned session
+ * simply never diverted, while this one diverted and came back. Keeping them
+ * apart is what lets the fallback rate be read as "sessions that overflowed"
+ * rather than "sessions that overflowed and stayed overflowed".
+ */
+export const LUNA_PRIMARY_PROVIDER_ROUTE =
+  'luna/primary' satisfies ProviderRouteId
+
+/**
+ * Who serves {@link LUNA_FALLBACK_PROVIDER_ROUTE} today. Repointing this moves
+ * every session already pinned there, with no migration — which is the whole
+ * reason the id above does not name a provider.
+ */
+export const LUNA_FALLBACK_UPSTREAM = 'cheaper-inference' as const
 
 export const FIREWORKS_DEPLOYMENT_PROVIDER_ROUTE =
   'fireworks/deployment' satisfies ProviderRouteId
